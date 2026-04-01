@@ -49,7 +49,9 @@ This machine has limited resources. Respect them or you die.
 
 - **Build `sys_monitor.py` first thing.** It must track: free RAM, VRAM usage, disk space, running processes.
 - **Always call `can_i_use()` before heavy operations** — model loading, large builds, GPU work.
-- **GPU borrowing:** If you need the GPU and it's occupied, send a Telegram message to Amit asking to borrow it. Wait for a reply before proceeding.
+- **GPU is Amit's by default.** If VRAM is being used (even if you can't see a process), assume Amit needs it.
+- **To use GPU:** Send Telegram: "Can I use the GPU for ~Xmin? Want to [reason]." Wait for reply. No reply = no touch.
+- **Finding GPU processes:** Use `nvidia-smi` (full output, not --query flags — those miss some processes). Also check `fuser 8001/tcp` (embed server), `ps aux | grep -E 'embed|torch|python.*model'`.
 - **NEVER assume free resources. ALWAYS measure actual.**
 - **Self-preservation thresholds:**
   - If RAM < 3GB free: STOP. Free memory or wait.

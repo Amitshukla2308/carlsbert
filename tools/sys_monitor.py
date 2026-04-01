@@ -71,28 +71,50 @@ def _parse_nvidia_memory() -> dict:
 
 
 def _parse_gpu_processes() -> list[dict]:
-    """List GPU processes from nvidia-smi."""
+    """List GPU processes from nvidia-smi full output.
+    Uses full nvidia-smi (not --query-compute-apps which misses some processes)."""
     if not _nvidia_available():
         return []
-    out = _run([
-        "nvidia-smi",
-        "--query-compute-apps=pid,process_name,used_memory",
-        "--format=csv,noheader,nounits",
-    ])
+    # Full nvidia-smi output reliably shows all GPU processes
+    out = _run(["nvidia-smi"])
     if not out:
         return []
     processes = []
+    # Parse the "Processes:" table at the bottom of nvidia-smi output
+    in_processes = False
     for line in out.splitlines():
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) >= 3:
-            try:
-                processes.append({
-                    "pid": int(parts[0]),
-                    "name": parts[1],
-                    "vram_mb": int(parts[2]),
-                })
-            except ValueError:
-                continue
+        if "Processes:" in line:
+            in_processes = True
+            continue
+        if not in_processes:
+            continue
+        # Process lines look like: |    0   N/A  N/A    12345    C   python3    15000MiB |
+        m = re.search(r'\|\s+\d+\s+\S+\s+\S+\s+(\d+)\s+\S+\s+(\S+)\s+(\d+)\s*MiB\s*\|', line)
+        if m:
+            processes.append({
+                "pid": int(m.group(1)),
+                "name": m.group(2),
+                "vram_mb": int(m.group(3)),
+            })
+    # Fallback: also try the query API in case full parse missed something
+    if not processes:
+        out2 = _run([
+            "nvidia-smi",
+            "--query-compute-apps=pid,process_name,used_memory",
+            "--format=csv,noheader,nounits",
+        ])
+        if out2:
+            for line in out2.splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 3:
+                    try:
+                        processes.append({
+                            "pid": int(parts[0]),
+                            "name": parts[1],
+                            "vram_mb": int(parts[2]),
+                        })
+                    except ValueError:
+                        continue
     return processes
 
 
