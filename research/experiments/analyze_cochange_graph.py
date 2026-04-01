@@ -9,12 +9,22 @@ import time
 
 COCHANGE_PATH = "/home/beast/projects/workspaces/juspay/artifacts/cochange_index.json"
 GRAPH_PATH = "/home/beast/projects/workspaces/juspay/artifacts/graph_with_summaries.json"
-OUT_DIR = "/home/beast/projects/hyperretrieval/research/data"
+OUT_DIR = "/home/beast/carlsbert/research/data"
 
 def extract_service(module_name):
     """Extract service name from module like 'euler-api-gateway::src::...'"""
     parts = module_name.split("::")
     return parts[0] if parts else module_name
+
+
+def cc_to_mg(cc_key):
+    """Convert cochange key (repo::path::Module::Parts) to MG dot-name (Module.Parts).
+    Haskell module segments start with uppercase."""
+    parts = cc_key.split("::")
+    for i, part in enumerate(parts):
+        if part and part[0].isupper():
+            return ".".join(parts[i:])
+    return cc_key  # fallback
 
 def load_cochange():
     print("[1/4] Loading co-change index...")
@@ -106,9 +116,10 @@ def analysis_1_complementarity(cochange_data, import_adj):
 
     seen_pairs = set()
 
-    for mod_a, partners in edges.items():
+    for mod_a_cc, partners in edges.items():
+        mod_a = cc_to_mg(mod_a_cc)
         for p in partners:
-            mod_b = p['module']
+            mod_b = cc_to_mg(p['module'])
             weight = p['weight']
             pair = tuple(sorted([mod_a, mod_b]))
             if pair in seen_pairs:
@@ -127,7 +138,7 @@ def analysis_1_complementarity(cochange_data, import_adj):
                 wbucket = "21+"
             total_by_weight[wbucket] += 1
 
-            # Check 1-hop
+            # Check 1-hop (using MG dot-format names)
             neighbors_a = import_adj.get(mod_a, set())
             if mod_b in neighbors_a:
                 connected_1hop += 1
@@ -208,20 +219,23 @@ def analysis_2_statistics(cochange_data):
     partners_per_module = defaultdict(int)
     cross_service = 0
     intra_service = 0
+    pair_weights = {}  # (mg_a, mg_b) -> weight
 
-    for mod_a, partners in edges.items():
+    for mod_a_cc, partners in edges.items():
+        mod_a = cc_to_mg(mod_a_cc)
         partners_per_module[mod_a] = len(partners)
         for p in partners:
-            mod_b = p['module']
+            mod_b = cc_to_mg(p['module'])
             weight = p['weight']
             pair = tuple(sorted([mod_a, mod_b]))
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)
             all_weights.append(weight)
+            pair_weights[pair] = weight
 
-            svc_a = extract_service(mod_a)
-            svc_b = extract_service(mod_b)
+            svc_a = extract_service(mod_a_cc)
+            svc_b = extract_service(p['module'])
             if svc_a == svc_b:
                 intra_service += 1
             else:
@@ -258,18 +272,6 @@ def analysis_2_statistics(cochange_data):
     # total modules from meta
     total_modules_in_index = meta['total_modules']
     cold_start = total_modules_in_index - len(modules_with_cochange)
-
-    # Top co-change pairs by weight
-    top_pairs = sorted(seen_pairs, key=lambda p: next(
-        pp['weight'] for pp in edges[p[0]] if pp['module'] == p[1]
-    ) if p[0] in edges else 0, reverse=True)
-
-    # Rebuild weight lookup
-    pair_weights = {}
-    for mod_a, partners in edges.items():
-        for p in partners:
-            pair = tuple(sorted([mod_a, p['module']]))
-            pair_weights[pair] = p['weight']
 
     top_10 = sorted(pair_weights.items(), key=lambda x: x[1], reverse=True)[:10]
 
@@ -324,9 +326,9 @@ rely entirely on structural (import/call) analysis or semantic similarity.
 |------|----------|----------|--------|
 """
     for i, (pair, w) in enumerate(top_10, 1):
-        # Shorten module names for readability
-        a_short = "::".join(pair[0].split("::")[-3:])
-        b_short = "::".join(pair[1].split("::")[-3:])
+        # Module names are already in dot-format from cc_to_mg
+        a_short = ".".join(pair[0].split(".")[-3:])
+        b_short = ".".join(pair[1].split(".")[-3:])
         report += f"| {i} | `{a_short}` | `{b_short}` | {w} |\n"
 
     report += f"""
@@ -356,23 +358,23 @@ def analysis_3_service_coupling(cochange_data):
 
     seen_pairs = set()
 
-    for mod_a, partners in edges.items():
-        svc_a = extract_service(mod_a)
-        service_modules[svc_a].add(mod_a)
+    for mod_a_cc, partners in edges.items():
+        svc_a = extract_service(mod_a_cc)
+        service_modules[svc_a].add(mod_a_cc)
         for p in partners:
-            mod_b = p['module']
+            mod_b_cc = p['module']
             weight = p['weight']
-            svc_b = extract_service(mod_b)
-            service_modules[svc_b].add(mod_b)
+            svc_b = extract_service(mod_b_cc)
+            service_modules[svc_b].add(mod_b_cc)
 
-            pair = tuple(sorted([mod_a, mod_b]))
+            pair = tuple(sorted([mod_a_cc, mod_b_cc]))
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)
 
             if svc_a != svc_b:
-                service_cross_modules[svc_a].add(mod_a)
-                service_cross_modules[svc_b].add(mod_b)
+                service_cross_modules[svc_a].add(mod_a_cc)
+                service_cross_modules[svc_b].add(mod_b_cc)
                 svc_pair = tuple(sorted([svc_a, svc_b]))
                 service_pair_weight[svc_pair] += weight
                 service_pair_count[svc_pair] += 1

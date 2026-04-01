@@ -1,267 +1,328 @@
 #!/usr/bin/env python3
 """
-System health monitor for WSL2 Linux with NVIDIA GPU.
+Carlsbert System Monitor
+Provides VRAM, RAM, disk, GPU process, and port status monitoring.
 
-Usage:
-    Standalone:  python3 sys_monitor.py
-    Importable:  from sys_monitor import get_health_report
+CLI usage:
+    python3 sys_monitor.py                  → prints report()
+    python3 sys_monitor.py check 4000 2000  → can_i_use(vram=4000, ram=2000)
+    python3 sys_monitor.py status           → full JSON status
+    python3 sys_monitor.py kill 8000        → kill process on port
 """
 
+import json
 import os
+import re
+import signal
+import shutil
 import subprocess
-import datetime
+import sys
 
 
-def _read_file(path):
-    """Read a file and return its content, or None on failure."""
+# Port → service name mapping
+PORT_SERVICES = {
+    8000: "chainlit",
+    8001: "embed",
+    8002: "mcp",
+    8003: "viz",
+    8004: "dashboard",
+}
+
+# Safety margins
+VRAM_HEADROOM_MB = 2048   # 2 GB
+RAM_HEADROOM_MB = 3072    # 3 GB
+DISK_HEADROOM_GB = 20     # 20 GB
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _run(cmd: list[str], timeout: int = 10) -> str:
+    """Run a subprocess and return stdout. Returns empty string on failure."""
     try:
-        with open(path) as f:
-            return f.read().strip()
-    except OSError:
-        return None
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return ""
 
 
-def get_ram_usage():
-    """Return RAM usage dict from /proc/meminfo."""
-    content = _read_file("/proc/meminfo")
-    if not content:
-        return {"error": "Could not read /proc/meminfo"}
-
-    info = {}
-    for line in content.splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            info[parts[0].rstrip(":")] = int(parts[1])  # values in kB
-
-    total_kb = info.get("MemTotal", 0)
-    free_kb = info.get("MemFree", 0)
-    buffers_kb = info.get("Buffers", 0)
-    cached_kb = info.get("Cached", 0)
-    available_kb = info.get("MemAvailable", free_kb + buffers_kb + cached_kb)
-    used_kb = total_kb - available_kb
-
-    def to_gb(kb):
-        return round(kb / 1048576, 2)
-
-    percent = round((used_kb / total_kb) * 100, 1) if total_kb else 0
-
-    return {
-        "total_gb": to_gb(total_kb),
-        "used_gb": to_gb(used_kb),
-        "free_gb": to_gb(available_kb),
-        "percent": percent,
-    }
+def _nvidia_available() -> bool:
+    return shutil.which("nvidia-smi") is not None
 
 
-def get_gpu_usage():
-    """Return GPU VRAM usage via nvidia-smi."""
+def _parse_nvidia_memory() -> dict:
+    """Parse VRAM from nvidia-smi."""
+    if not _nvidia_available():
+        return {"vram_total_mb": 0, "vram_used_mb": 0, "vram_free_mb": 0}
+    out = _run([
+        "nvidia-smi",
+        "--query-gpu=memory.total,memory.used,memory.free",
+        "--format=csv,noheader,nounits",
+    ])
+    if not out:
+        return {"vram_total_mb": 0, "vram_used_mb": 0, "vram_free_mb": 0}
+    parts = out.splitlines()[0].split(",")
     try:
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return {"error": f"nvidia-smi failed: {result.stderr.strip()}"}
+        total, used, free = (int(p.strip()) for p in parts[:3])
+    except (ValueError, IndexError):
+        return {"vram_total_mb": 0, "vram_used_mb": 0, "vram_free_mb": 0}
+    return {"vram_total_mb": total, "vram_used_mb": used, "vram_free_mb": free}
 
-        gpus = []
-        for line in result.stdout.strip().splitlines():
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) >= 5:
-                total = float(parts[1])
-                used = float(parts[2])
-                free = float(parts[3])
-                gpus.append({
-                    "name": parts[0],
-                    "total_mb": total,
-                    "used_mb": used,
-                    "free_mb": free,
-                    "percent": round((used / total) * 100, 1) if total else 0,
-                    "gpu_util_percent": parts[4],
+
+def _parse_gpu_processes() -> list[dict]:
+    """List GPU processes from nvidia-smi."""
+    if not _nvidia_available():
+        return []
+    out = _run([
+        "nvidia-smi",
+        "--query-compute-apps=pid,process_name,used_memory",
+        "--format=csv,noheader,nounits",
+    ])
+    if not out:
+        return []
+    processes = []
+    for line in out.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 3:
+            try:
+                processes.append({
+                    "pid": int(parts[0]),
+                    "name": parts[1],
+                    "vram_mb": int(parts[2]),
                 })
-        return gpus if gpus else {"error": "No GPUs found"}
-    except FileNotFoundError:
-        return {"error": "nvidia-smi not found"}
-    except subprocess.TimeoutExpired:
-        return {"error": "nvidia-smi timed out"}
-
-
-def get_disk_usage(path="/"):
-    """Return disk usage for the given mount point."""
-    try:
-        st = os.statvfs(path)
-        total = st.f_frsize * st.f_blocks
-        free = st.f_frsize * st.f_bavail
-        used = total - free
-
-        def to_gb(b):
-            return round(b / (1024 ** 3), 2)
-
-        percent = round((used / total) * 100, 1) if total else 0
-        return {
-            "path": path,
-            "total_gb": to_gb(total),
-            "used_gb": to_gb(used),
-            "free_gb": to_gb(free),
-            "percent": percent,
-        }
-    except OSError as e:
-        return {"error": str(e)}
-
-
-def get_top_processes(n=5):
-    """Return top N processes by memory (RSS) from /proc."""
-    procs = []
-    try:
-        for pid in os.listdir("/proc"):
-            if not pid.isdigit():
+            except ValueError:
                 continue
-            try:
-                status = _read_file(f"/proc/{pid}/status")
-                if not status:
-                    continue
-                name = pid
-                rss_kb = 0
-                for line in status.splitlines():
-                    if line.startswith("Name:"):
-                        name = line.split(":", 1)[1].strip()
-                    elif line.startswith("VmRSS:"):
-                        rss_kb = int(line.split()[1])
-                procs.append({"pid": int(pid), "name": name, "rss_mb": round(rss_kb / 1024, 1)})
-            except (OSError, ValueError, IndexError):
-                continue
+    return processes
+
+
+def _parse_ram() -> dict:
+    """Parse RAM from free -m."""
+    out = _run(["free", "-m"])
+    if not out:
+        return {"ram_total_mb": 0, "ram_used_mb": 0, "ram_free_mb": 0}
+    for line in out.splitlines():
+        if line.startswith("Mem:"):
+            parts = line.split()
+            total = int(parts[1])
+            # Prefer 'available' column (index 6) over raw 'free'
+            if len(parts) >= 7:
+                available = int(parts[6])
+            else:
+                available = int(parts[3])
+            used = total - available
+            return {"ram_total_mb": total, "ram_used_mb": used, "ram_free_mb": available}
+    return {"ram_total_mb": 0, "ram_used_mb": 0, "ram_free_mb": 0}
+
+
+def _parse_disk() -> dict:
+    """Parse disk usage from df -BG /home."""
+    out = _run(["df", "-BG", "/home"])
+    if not out:
+        return {"disk_total_gb": 0, "disk_used_gb": 0, "disk_free_gb": 0}
+    lines = out.splitlines()
+    if len(lines) < 2:
+        return {"disk_total_gb": 0, "disk_used_gb": 0, "disk_free_gb": 0}
+    parts = lines[1].split()
+    try:
+        total = int(parts[1].rstrip("G"))
+        used = int(parts[2].rstrip("G"))
+        free = int(parts[3].rstrip("G"))
+        return {"disk_total_gb": total, "disk_used_gb": used, "disk_free_gb": free}
+    except (IndexError, ValueError):
+        return {"disk_total_gb": 0, "disk_used_gb": 0, "disk_free_gb": 0}
+
+
+def _check_ports() -> dict:
+    """Check which known ports are active. Returns {port: service_name} for active ones."""
+    active = {}
+    for port, service in PORT_SERVICES.items():
+        # Try ss first, fall back to lsof
+        out = _run(["ss", "-tlnp", f"sport = :{port}"])
+        if out and str(port) in out:
+            active[port] = service
+            continue
+        out = _run(["lsof", "-i", f":{port}", "-sTCP:LISTEN"])
+        if out and str(port) in out:
+            active[port] = service
+    return active
+
+
+def _get_load_avg() -> str:
+    """Return system load average string."""
+    try:
+        load1, load5, load15 = os.getloadavg()
+        return f"{load1:.2f} {load5:.2f} {load15:.2f}"
     except OSError:
-        return [{"error": "Could not read /proc"}]
-
-    procs.sort(key=lambda p: p["rss_mb"], reverse=True)
-    return procs[:n]
+        return "N/A"
 
 
-def get_zombie_processes():
-    """Return list of zombie processes."""
-    zombies = []
-    try:
-        for pid in os.listdir("/proc"):
-            if not pid.isdigit():
-                continue
-            try:
-                stat = _read_file(f"/proc/{pid}/stat")
-                if not stat:
-                    continue
-                # State is the field after the comm (in parens)
-                parts = stat.split(") ")
-                if len(parts) >= 2 and parts[1].startswith("Z"):
-                    name = stat.split("(")[1].split(")")[0] if "(" in stat else pid
-                    zombies.append({"pid": int(pid), "name": name})
-            except (OSError, ValueError, IndexError):
-                continue
-    except OSError:
-        pass
-    return zombies
+def _get_process_count() -> int:
+    """Return total number of running processes."""
+    out = _run(["ps", "aux", "--no-headers"])
+    if not out:
+        return 0
+    return len(out.splitlines())
 
 
-def get_uptime_and_load():
-    """Return uptime and load average."""
-    result = {}
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-    uptime_str = _read_file("/proc/uptime")
-    if uptime_str:
-        secs = float(uptime_str.split()[0])
-        result["uptime"] = str(datetime.timedelta(seconds=int(secs)))
-    else:
-        result["uptime"] = "unknown"
+def get_status() -> dict:
+    """Full system status snapshot."""
+    mem = _parse_nvidia_memory()
+    ram = _parse_ram()
+    disk = _parse_disk()
+    gpu_procs = _parse_gpu_processes()
+    ports = _check_ports()
+    load = _get_load_avg()
+    proc_count = _get_process_count()
 
-    loadavg = _read_file("/proc/loadavg")
-    if loadavg:
-        parts = loadavg.split()
-        result["load_1m"] = float(parts[0])
-        result["load_5m"] = float(parts[1])
-        result["load_15m"] = float(parts[2])
-    else:
-        result["load_1m"] = result["load_5m"] = result["load_15m"] = 0
-
-    return result
-
-
-def get_health_report():
-    """Return a complete system health report as a dict."""
     return {
-        "ram": get_ram_usage(),
-        "gpu": get_gpu_usage(),
-        "disk": get_disk_usage("/"),
-        "top_processes": get_top_processes(5),
-        "zombies": get_zombie_processes(),
-        "uptime": get_uptime_and_load(),
+        **mem,
+        **ram,
+        **disk,
+        "gpu_processes": gpu_procs,
+        "ports": ports,
+        "process_count": proc_count,
+        "load_avg": load,
     }
 
 
-def _format_report(report):
-    """Format the health report as a readable string."""
-    lines = []
-    sep = "-" * 50
+def can_i_use(
+    vram_needed_mb: int = 0,
+    ram_needed_mb: int = 0,
+    disk_needed_gb: int = 0,
+) -> tuple[bool, str]:
+    """
+    Check whether requested resources are available after safety margins.
+    Safety margins: 2 GB VRAM, 3 GB RAM, 20 GB disk.
+    Returns (ok, reason_string).
+    """
+    status = get_status()
+    issues = []
 
-    lines.append(sep)
-    lines.append("  SYSTEM HEALTH REPORT")
-    lines.append(sep)
+    if vram_needed_mb > 0:
+        free = status["vram_free_mb"]
+        needed_total = vram_needed_mb + VRAM_HEADROOM_MB
+        if free < needed_total:
+            issues.append(
+                f"Only {free / 1024:.1f}GB VRAM free, "
+                f"need {vram_needed_mb / 1024:.1f}GB + {VRAM_HEADROOM_MB / 1024:.0f}GB safety"
+            )
 
-    # Uptime
-    up = report["uptime"]
-    lines.append(f"\n  Uptime:       {up['uptime']}")
-    lines.append(f"  Load avg:     {up['load_1m']}  {up['load_5m']}  {up['load_15m']}  (1m / 5m / 15m)")
+    if ram_needed_mb > 0:
+        free = status["ram_free_mb"]
+        needed_total = ram_needed_mb + RAM_HEADROOM_MB
+        if free < needed_total:
+            issues.append(
+                f"Only {free / 1024:.1f}GB RAM free, "
+                f"need {ram_needed_mb / 1024:.1f}GB + {RAM_HEADROOM_MB / 1024:.0f}GB safety"
+            )
 
-    # RAM
-    ram = report["ram"]
-    if "error" in ram:
-        lines.append(f"\n  RAM:          {ram['error']}")
-    else:
-        lines.append(f"\n  RAM:          {ram['used_gb']} / {ram['total_gb']} GB  ({ram['percent']}% used)")
-        lines.append(f"                {ram['free_gb']} GB available")
+    if disk_needed_gb > 0:
+        free = status["disk_free_gb"]
+        needed_total = disk_needed_gb + DISK_HEADROOM_GB
+        if free < needed_total:
+            issues.append(
+                f"Only {free}GB disk free, "
+                f"need {disk_needed_gb}GB + {DISK_HEADROOM_GB}GB safety"
+            )
 
-    # GPU
-    gpu = report["gpu"]
-    if isinstance(gpu, dict) and "error" in gpu:
-        lines.append(f"\n  GPU:          {gpu['error']}")
-    elif isinstance(gpu, list):
-        for i, g in enumerate(gpu):
-            label = f"  GPU {i}:" if len(gpu) > 1 else "  GPU:"
-            lines.append(f"\n{label}         {g['name']}")
-            lines.append(f"  VRAM:         {g['used_mb']:.0f} / {g['total_mb']:.0f} MB  ({g['percent']}% used)")
-            lines.append(f"  GPU Util:     {g['gpu_util_percent']}%")
+    if issues:
+        return False, "; ".join(issues)
+    return True, "Resources available"
 
-    # Disk
-    disk = report["disk"]
-    if "error" in disk:
-        lines.append(f"\n  Disk /:       {disk['error']}")
-    else:
-        lines.append(f"\n  Disk /:       {disk['used_gb']} / {disk['total_gb']} GB  ({disk['percent']}% used)")
-        lines.append(f"                {disk['free_gb']} GB free")
 
-    # Top processes
-    lines.append(f"\n  Top 5 by memory:")
-    for p in report["top_processes"]:
-        if "error" in p:
-            lines.append(f"    {p['error']}")
-        else:
-            lines.append(f"    PID {p['pid']:>7}  {p['rss_mb']:>8.1f} MB  {p['name']}")
+def safe_to_load_model(model_size_gb: float) -> bool:
+    """Shorthand: check if VRAM is sufficient to load a model of given size in GB."""
+    ok, _ = can_i_use(vram_needed_mb=int(model_size_gb * 1024))
+    return ok
 
-    # Zombies
-    zombies = report["zombies"]
-    if zombies:
-        lines.append(f"\n  Zombie processes ({len(zombies)}):")
-        for z in zombies:
-            lines.append(f"    PID {z['pid']:>7}  {z['name']}")
-    else:
-        lines.append(f"\n  Zombies:      none")
 
-    lines.append(sep)
+def kill_port(port: int) -> str:
+    """Kill whatever process is listening on the given port."""
+    # Try lsof first for clean PID extraction
+    out = _run(["lsof", "-t", f"-i:{port}"])
+    if out:
+        pids = [p.strip() for p in out.splitlines() if p.strip()]
+        for pid in pids:
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except (ProcessLookupError, ValueError, PermissionError):
+                pass
+        return f"Killed PID(s) {', '.join(pids)} on port {port}"
+
+    # Fallback: try ss + regex PID extraction
+    out = _run(["ss", "-tlnp", f"sport = :{port}"])
+    if not out or str(port) not in out:
+        return f"Nothing running on port {port}"
+    pids = re.findall(r"pid=(\d+)", out)
+    if not pids:
+        return f"Port {port} is active but could not extract PID"
+    for pid in set(pids):
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return f"Killed PID(s) {', '.join(sorted(set(pids)))} on port {port}"
+
+
+def report() -> str:
+    """Short formatted summary suitable for Telegram (5-6 lines)."""
+    s = get_status()
+    gpu_tag = "NO GPU" if s["vram_total_mb"] == 0 else (
+        f"{s['vram_used_mb']}/{s['vram_total_mb']}MB"
+    )
+    active_ports = ", ".join(
+        f"{p}:{n}" for p, n in sorted(s["ports"].items())
+    ) or "none"
+    gpu_procs = len(s["gpu_processes"])
+
+    lines = [
+        f"GPU: {gpu_tag} | RAM: {s['ram_used_mb']}/{s['ram_total_mb']}MB",
+        f"Disk: {s['disk_used_gb']}/{s['disk_total_gb']}GB",
+        f"Load: {s['load_avg']} | Procs: {s['process_count']}",
+        f"GPU procs: {gpu_procs}",
+        f"Ports: {active_ports}",
+    ]
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    args = sys.argv[1:]
+
+    if not args:
+        print(report())
+        return
+
+    cmd = args[0]
+
+    if cmd == "check":
+        vram = int(args[1]) if len(args) > 1 else 0
+        ram = int(args[2]) if len(args) > 2 else 0
+        disk = int(args[3]) if len(args) > 3 else 0
+        ok, reason = can_i_use(vram, ram, disk)
+        status_label = "OK" if ok else "FAIL"
+        print(f"[{status_label}] {reason}")
+        sys.exit(0 if ok else 1)
+
+    if cmd == "status":
+        print(json.dumps(get_status(), indent=2))
+        return
+
+    if cmd == "kill" and len(args) > 1:
+        print(kill_port(int(args[1])))
+        return
+
+    print(f"Usage: {sys.argv[0]} [check VRAM_MB RAM_MB [DISK_GB] | status | kill PORT]")
+    sys.exit(1)
+
+
 if __name__ == "__main__":
-    report = get_health_report()
-    print(_format_report(report))
+    main()

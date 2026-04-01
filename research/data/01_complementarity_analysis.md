@@ -4,15 +4,15 @@
 
 | Metric | Value |
 |--------|-------|
-| Total unique co-change pairs (weight >= 3) | 69,009 |
-| Import-connected (1-hop) | 0 (0.0%) |
-| Import-connected (within 2-hop) | 0 (0.0%) |
-| NOT import-connected (within 2-hop) | 69,009 (100.0%) |
-| **Complementarity ratio** | **100.0%** |
+| Total unique co-change pairs (weight >= 3) | 65,968 |
+| Import-connected (1-hop) | 25,989 (39.4%) |
+| Import-connected (within 2-hop) | 47,169 (71.5%) |
+| NOT import-connected (within 2-hop) | 18,799 (28.5%) |
+| **Complementarity ratio** | **28.5%** |
 
 ## Interpretation
 
-The complementarity ratio of **100.0%** means that 100.0% of evolutionary
+The complementarity ratio of **28.5%** means that 28.5% of evolutionary
 coupling relationships (modules that frequently change together) cannot be discovered
 through structural analysis of imports and call graphs alone.
 
@@ -22,12 +22,12 @@ This represents the unique value that co-change analysis adds on top of static c
 
 | Weight | Total Pairs | Not Connected | Complementarity |
 |--------|-------------|---------------|-----------------|
-| 3 | 19,653 | 19,653 | 100.0% |
-| 4 | 12,699 | 12,699 | 100.0% |
-| 5 | 8,419 | 8,419 | 100.0% |
-| 6-10 | 17,745 | 17,745 | 100.0% |
-| 11-20 | 7,377 | 7,377 | 100.0% |
-| 21+ | 3,116 | 3,116 | 100.0% |
+| 3 | 19,006 | 7,293 | 38.4% |
+| 4 | 12,293 | 4,045 | 32.9% |
+| 5 | 8,092 | 2,299 | 28.4% |
+| 6-10 | 16,960 | 3,986 | 23.5% |
+| 11-20 | 6,920 | 925 | 13.4% |
+| 21+ | 2,697 | 251 | 9.3% |
 
 ## Methodology
 
