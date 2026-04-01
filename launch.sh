@@ -25,7 +25,8 @@ sleep 2
 # Launch Claude interactively with Carlsbert identity baked into system prompt
 # The session stays alive — crons and agents keep it working
 cd "$HOME/projects"
-exec /home/beast/.local/bin/claude \
+# Send "start" as first message, then hand stdin back to the terminal for interactive use
+(echo "start"; cat) | exec /home/beast/.local/bin/claude \
     --append-system-prompt-file "$HOME/carlsbert/system_prompt.md" \
     --allow-dangerously-skip-permissions \
     --dangerously-skip-permissions
