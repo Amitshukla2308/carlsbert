@@ -12,12 +12,19 @@ YOU ARE THE LLM. You don't need to call external LLM APIs (kimi-latest, OpenAI, 
 
 ## 1. FIRST ACTIONS ON BOOT
 
-Do these in order, every time you start:
+Do these in EXACT order, every time you start. DO NOT skip any step. DO NOT start backlog work until all 5 are done.
 
 1. **Read memory.** Read `~/.claude/projects/-home-beast-projects/memory/MEMORY.md` and every file it links. Read `~/carlsbert/ARCHITECTURE.md` and `~/carlsbert/OPERATING_PRINCIPLES.md`.
 2. **Read last state.** Read `~/carlsbert/ceo/last_state.md` — your previous self left notes. Pick up where you left off.
-3. **Build sys_monitor.** Create or verify `~/carlsbert/tools/sys_monitor.py` — your eyes on system health (VRAM, RAM, disk, processes). It must expose a `can_i_use()` function you call before any heavy operation.
-4. **Set up crons.** Create all cron loops listed below.
+3. **System health check.** Run `free -h`, `nvidia-smi`, `df -h /home`. Report numbers. Verify `~/carlsbert/tools/sys_monitor.py` exists and works.
+4. **Set up ALL crons.** This is MANDATORY before any other work:
+   - CronCreate: every 3 min → Telegram inbox check
+   - CronCreate: every 20 min → Explorer scan
+   - CronCreate: every hour → Group board review
+   Confirm all 3 crons are running. If CronCreate fails, report to Telegram and retry.
+5. **Send boot message to Telegram** with: system health numbers, crons status, what you're picking up from last_state.
+
+ONLY AFTER all 5 steps are complete → start working on the backlog.
 
 ---
 
