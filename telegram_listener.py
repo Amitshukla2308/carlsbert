@@ -9,9 +9,10 @@ Format of queued instructions:
   {"ts": 1234567890, "text": "raw message", "company": "hyperretrieval", "instruction": "check X", "status": "pending"}
 
 Message format from Amit:
+  "seed: topic"                 → plant a seed of interest, research deeply, update mindstate
   "company: instruction"        → routed to specific company
   "all: instruction"            → broadcast to all companies
-  Just plain text               → routed to core company (hyperretrieval)
+  Just plain text               → general, Claude CLI decides
 
 Usage:
   python3 telegram_listener.py              # run forever (foreground)
@@ -23,8 +24,22 @@ sys.path.insert(0, os.path.dirname(__file__))
 from telegram_bridge import poll, send
 
 INBOX = os.path.join(os.path.dirname(__file__), "ceo", "inbox.jsonl")
+MINDSTATE = os.path.join(os.path.dirname(__file__), "ceo", "mindstate.jsonl")
 COMPANIES = {"hyperretrieval", "chatbeast", "cryptoregimetrader", "connector-service",
              "stock-ai-beast", "zeroclaw", "beast_agent", "autoresearch", "open-skills"}
+
+
+def _save_mindstate(topic, ts):
+    """Track what Amit is thinking about. Seeds build a picture of his current interests,
+    curiosities, and directions. Carlsbert uses this to prioritize and connect dots."""
+    os.makedirs(os.path.dirname(MINDSTATE), exist_ok=True)
+    entry = {
+        "ts": ts,
+        "topic": topic,
+        "saved_at": time.time(),
+    }
+    with open(MINDSTATE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 def _parse_instruction(text):
     """Parse 'company: instruction' format. Falls back to 'general' (for Claude CLI to handle)."""
@@ -96,11 +111,20 @@ def poll_once():
     new_instructions = []
     for r in replies:
         text = r["text"]
-        # Skip common non-instruction replies
+        # Seed: a fragment of interest — Amit found something, research it deeply
+        # Also updates his mindstate so we know what he's thinking about
+        if text.lower().startswith("seed:"):
+            seed_topic = text[5:].strip()
+            company, instruction = "seed", seed_topic
+            _save_mindstate(seed_topic, r["date"])
+            entry = _queue(r["date"], text, company, instruction)
+            new_instructions.append(entry)
+            send(f"Seed planted: {seed_topic}. Will research and connect to our work.", parse_mode=None)
+            continue
+
+        # Decision replies
         if text.lower() in ("ok", "got it", "thanks", "approved", "approve",
                             "rejected", "reject", "yes", "no", "👍", "👎"):
-            # These are decision replies, not new instructions
-            # Still queue them so the waiting agent can pick them up
             company, instruction = "decision", text
         else:
             company, instruction = _parse_instruction(text)
@@ -120,19 +144,21 @@ def poll_once():
 
     return new_instructions
 
-def run_forever(interval=15):
-    """Poll every N seconds."""
-    print(f"[listener] Polling every {interval}s. Inbox: {INBOX}")
-    send("👂 Listener active. Send instructions as:\n`company: do something`\nor just type and it goes to HyperRetrieval.", parse_mode="Markdown")
+def run_forever():
+    """Long-poll loop — blocks on Telegram's getUpdates (60s timeout).
+    Messages arrive near-instantly, no sleep needed between polls."""
+    print(f"[listener] Long-poll streaming mode. Inbox: {INBOX}")
+    send("Carlsbert listener active (streaming mode).", parse_mode=None)
     while True:
         try:
+            # This blocks up to 60s waiting for messages — NOT busy polling
             new = poll_once()
             if new:
                 for n in new:
                     print(f"[listener] {n['company']}: {n['instruction']}")
         except Exception as e:
             print(f"[listener] error: {e}")
-        time.sleep(interval)
+            time.sleep(3)  # brief backoff only on errors
 
 if __name__ == "__main__":
     if "--once" in sys.argv:

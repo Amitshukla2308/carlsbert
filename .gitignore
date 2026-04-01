@@ -1,5 +1,10 @@
 config.yaml
 __pycache__/
 *.log
-.telegram_offset
 *.pyc
+.telegram_offset
+.running_pid
+ceo/inbox.jsonl
+ceo/mindstate.jsonl
+ceo/last_state.md
+journal.md

@@ -70,7 +70,7 @@ def poll(since_id=None):
     """Poll for new messages from Amit. Returns list of text replies."""
     cfg = _load_config()
     chat_id = cfg["telegram"]["chat_id"]
-    params = {"timeout": 5, "allowed_updates": ["message"]}
+    params = {"timeout": 60, "allowed_updates": ["message"]}  # long poll — blocks until message arrives
 
     # Track last seen update
     offset_file = os.path.join(os.path.dirname(__file__), ".telegram_offset")
