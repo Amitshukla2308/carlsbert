@@ -25,8 +25,19 @@ sleep 2
 # Launch Claude interactively with Carlsbert identity baked into system prompt
 # The session stays alive — crons and agents keep it working
 cd "$HOME/projects"
-# Send "start" as first message, then hand stdin back to the terminal for interactive use
-(echo "start"; cat) | exec /home/beast/.local/bin/claude \
+# Launch Claude with "start" as the first user message via a FIFO,
+# then reconnect terminal stdin so it stays interactive
+FIFO=$(mktemp -u)
+mkfifo "$FIFO"
+
+# Background: write "start", then forward terminal stdin
+(echo "start"; exec cat <&3) > "$FIFO" 3<&0 &
+FEEDER=$!
+
+/home/beast/.local/bin/claude \
     --append-system-prompt-file "$HOME/carlsbert/system_prompt.md" \
     --allow-dangerously-skip-permissions \
-    --dangerously-skip-permissions
+    --dangerously-skip-permissions < "$FIFO"
+
+kill $FEEDER 2>/dev/null
+rm -f "$FIFO"
