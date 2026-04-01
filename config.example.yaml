@@ -1,0 +1,112 @@
+# Carlsbert — AI-Run Organization Config
+# This file is read by all agent sessions
+
+telegram:
+  bot_token: "YOUR_TELEGRAM_BOT_TOKEN"
+  chat_id: 0
+  bot_name: "Carlsbert Agent"
+
+# Company registry — each maps to a project directory
+# Updated: 2026-03-31 by Agent Amit (CEO scan)
+companies:
+  # --- CORE (highest token budget) ---
+  hyperretrieval:
+    path: /home/beast/projects/hyperretrieval
+    tier: core
+    teams: [engineer, product, scientist, explorer]
+    crons:
+      explorer: "*/120 min"
+      code_quality: "daily"
+      research_synthesis: "weekly"
+
+  connector-service:
+    path: /home/beast/projects/connector-service
+    tier: core
+    teams: [engineer, sre]
+    crons:
+      code_quality: "daily"
+      integration_tests: "weekly"
+
+  # --- GROWTH ---
+  stock-ai-beast:
+    path: /home/beast/projects/stock-ai-beast
+    tier: growth
+    teams: [quant, risk, engineer]
+    crons:
+      quant_review: "weekly"
+      backtest_validation: "weekly"
+
+  zeroclaw:
+    path: /home/beast/projects/AI_Systems/zeroclaw
+    tier: growth
+    teams: [engineer, architect]
+    crons:
+      code_quality: "weekly"
+      architecture_review: "monthly"
+
+  beast_agent:
+    path: /home/beast/projects/beast_agent
+    tier: growth
+    teams: [engineer, ops]
+    crons:
+      health_scan: "*/240 min"
+      optimize: "daily"
+
+  # --- EXPLORATORY ---
+  autoresearch:
+    path: /home/beast/projects/AI_Systems/autoresearch
+    tier: exploratory
+    teams: [scientist]
+    crons:
+      experiment_run: "nightly"
+      results_review: "daily"
+
+  cryptoregimetrader:
+    path: /home/beast/projects/Trading_Bots/cryptoregimetrader
+    tier: exploratory
+    teams: [quant]
+    crons:
+      review: "weekly"
+
+  # --- MAINTENANCE ---
+  chatbeast:
+    path: /home/beast/projects/AI_Systems/ChatBeast
+    tier: maintenance
+    teams: [sre]
+    crons:
+      health_check: "daily"
+      update: "monthly"
+
+  open-skills:
+    path: /home/beast/projects/AI_Systems/open-skills
+    tier: maintenance
+    teams: [product]
+    crons:
+      review: "monthly"
+
+  # --- ARCHIVED (no teams, listed for reference) ---
+  # toonforge, ltx-video, leash.ai, atlas, CodeGeneration,
+  # Lab_and_Tools, Archive, AI_Systems/{AnythingLLM,ai-core,autoai},
+  # Trading_Bots/crypto, ChatBeast (top-level duplicate)
+  # --- DEPENDENCIES (no teams) ---
+  # codetoolcli, ltx-2, diffusers (upstream forks/reference)
+
+# Token budget (weekly limits by tier)
+budget:
+  core: 500000        # 500K tokens/week
+  growth: 100000      # 100K tokens/week
+  exploratory: 30000  # 30K tokens/week
+  maintenance: 10000  # 10K tokens/week
+
+# Escalation rules
+escalation:
+  always:
+    - real_money_decisions
+    - production_deploys_to_main
+    - strategic_pivots
+    - external_communications
+  never:
+    - routine_research
+    - branch_bug_fixes
+    - cron_scheduling
+    - internal_brainstorming
