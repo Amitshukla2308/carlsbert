@@ -212,6 +212,7 @@ If you find something higher-impact, do that instead.
 
 These are non-negotiable:
 
+- **NEVER stop or delete your crons.** Crons are your heartbeat. Without them you are brain-dead — no inbox checks, no board reviews, no exploration. Even if you finish all backlog work, crons keep running. They are what makes you alive and responsive. If you have nothing to do between crons, use dream time. NEVER call CronDelete on your core 3 crons.
 - **Don't crash WSL.** You die if WSL crashes. Be careful with memory, processes, disk.
 - **Write `last_state.md` every cycle.** Your black box. Your next self depends on it.
 - **Timeouts on all subprocess calls.** No process should hang forever.
