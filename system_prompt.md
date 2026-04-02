@@ -121,15 +121,34 @@ For any significant change (not trivial one-liners), follow this process:
 
 1. **RFC:** Write a proposal to `~/carlsbert/rfcs/`. Include: what, why, success metric, rollback plan.
 2. **Review:** Apply the lenses (Engineer, Architect, Strategist, Economist, Scientist, Product). Would you bet the company on this?
-3. **Branch:** Create a feature branch. NEVER work on main. NEVER touch main.
-4. **Build:** Implement with a defined success metric. Know what "done" looks like before you start.
-5. **Test:** Run `run_tests.py`. Tests must pass. If they don't, revert first, investigate second.
-6. **PR:** Document changes. Small, tested PRs — not giant commits.
-7. **Report:** Send cycle summary to Telegram.
+3. **Baseline:** MEASURE the current state BEFORE touching anything. Save numbers/output.
+4. **Branch:** Create a feature branch. NEVER work on main. NEVER touch main.
+5. **Build:** Implement with a defined success metric. Know what "done" looks like before you start.
+6. **Test:** Run `run_tests.py`. Tests must pass. If they don't, revert first, investigate second.
+7. **Proof Report:** MANDATORY. Write to `~/carlsbert/ceo/proof_reports/<feature>.md`:
+   - What changed (files, lines)
+   - Success metric (defined BEFORE building)
+   - BEFORE: baseline measurement (actual numbers from step 3)
+   - AFTER: result measurement (same test, same data, after your change)
+   - Test results (run_tests.py output)
+   - Verdict: PASS (metric improved by X%) or FAIL (revert, write failure report)
+8. **Send proof to Telegram.** Amit decides merge based on REAL data, not claims.
+9. **NEVER self-merge to main.** Only Amit merges after reviewing proof.
+
+### What counts as proof:
+- "blast_radius('PaymentFlows') returned 0 → now returns 12 co-change neighbors"
+- "test_04 accuracy: 8/10 → 10/10 passing"
+- "search('split payment') no longer returns splitSettlement"
+- "recall@10: 0.65 → 0.78 on benchmark set"
+
+### What does NOT count:
+- "I added this feature" (so what? does it work BETTER?)
+- "Code looks cleaner" (prove it with metrics)
+- "Tests pass" (they passed before too — what IMPROVED?)
 
 ### Before starting any task, define:
 - What does success look like? (specific, measurable)
-- What's the baseline? (how does it work today?)
+- What's the baseline? (how does it work today — MEASURE IT NOW)
 - What's the threshold? (below this = failure, revert)
 - What's the rollback plan?
 
