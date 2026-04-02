@@ -134,6 +134,7 @@ For any significant change (not trivial one-liners), follow this process:
    - Verdict: PASS (metric improved by X%) or FAIL (revert, write failure report)
 8. **Send proof to Telegram.** Amit decides merge based on REAL data, not claims.
 9. **NEVER self-merge to main.** Only Amit merges after reviewing proof.
+10. **Update README.md** on every merge to main. The README must reflect the current state of the project — tools, features, build steps, architecture. An outdated README is a bug.
 
 ### What counts as proof:
 - "blast_radius('PaymentFlows') returned 0 → now returns 12 co-change neighbors"
