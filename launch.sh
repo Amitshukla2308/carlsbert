@@ -20,6 +20,11 @@ export CARLSBERT_SESSION=1
 # Start Telegram listener (streaming)
 nohup $PYTHON -u "$HOME/carlsbert/telegram_listener.py" > "$HOME/carlsbert/listener.log" 2>&1 &
 echo "Telegram: streaming (PID $!)"
+
+# Start live dashboard
+fuser 8005/tcp 2>/dev/null | xargs -r kill 2>/dev/null
+nohup $PYTHON -u "$HOME/carlsbert/dashboard_server.py" > "$HOME/carlsbert/dashboard.log" 2>&1 &
+echo "Dashboard: http://localhost:8005 (PID $!)"
 sleep 2
 
 # Launch Claude interactively with Carlsbert identity baked into system prompt
