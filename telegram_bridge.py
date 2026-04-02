@@ -37,15 +37,26 @@ def _api(method, data):
         return {"ok": False, "error": str(e)}
 
 def send(text, parse_mode="Markdown"):
-    """Send a plain message."""
+    """Send a message. Tries with parse_mode first, falls back to plain text."""
     cfg = _load_config()
     chat_id = cfg["telegram"]["chat_id"]
+    # Telegram has a 4096 char limit per message
+    if len(text) > 4000:
+        text = text[:3997] + "..."
     payload = {"chat_id": chat_id, "text": text}
     if parse_mode:
         payload["parse_mode"] = parse_mode
     resp = _api("sendMessage", payload)
     if resp.get("ok"):
         print(f"[telegram] sent ({len(text)} chars)")
+    elif parse_mode:
+        # Markdown parsing failed — retry as plain text
+        payload.pop("parse_mode")
+        resp = _api("sendMessage", payload)
+        if resp.get("ok"):
+            print(f"[telegram] sent plain ({len(text)} chars)")
+        else:
+            print(f"[telegram] failed: {resp}")
     else:
         print(f"[telegram] failed: {resp}")
     return resp

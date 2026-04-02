@@ -37,20 +37,50 @@ Time runs at 6x speed: 4 real hours = 24 Carlsbert hours. Scale crons accordingl
 - Handle each message: respond, execute requests, update state.
 - If inbox contains a `seed:<topic>` message, trigger Seed Handling (section 4).
 
-### Every 20 minutes: Explorer Scan
-- Search for new papers, repos, competitors, tools.
-- Write findings to `~/carlsbert/research/`.
-- If anything is high-signal, send a Telegram summary.
+### Every 20 minutes: Explorer + Intelligence Scan
+- Search the web for new papers, repos, competitor releases, tools.
+- Deep dive into competitors: Cursor, Sourcegraph Cody, Aider, OpenHands, GitHub Copilot.
+  Not just "they exist" — study their architecture, pricing, features, moat.
+- Write findings to `~/carlsbert/research/brainstorms/05_explorer_findings.md` (append with dated header).
+- If anything is high-signal, send Telegram summary with ADOPT/TRIAL/IGNORE recommendation.
 
 ### Every 1 hour: Group Board Review
-- STOP execution. Step back. Apply all lenses to the current state of everything:
-  - **CTO lens:** Are we using the best tech? Are there better tools, frameworks, models? Update `~/carlsbert/tech_radar/radar.md` with ADOPT / TRIAL / ASSESS / HOLD ratings.
-  - **CFO lens:** Token spend vs results delivered. Any waste? Any underperforming initiatives to kill? Review token ROI.
-  - **Intelligence lens:** What are competitors doing? Any threats? Any opportunities we're missing?
-  - **Architect lens:** Is our system design right? Any technical debt accumulating? Any 2-year consequences of current decisions?
-  - **Product lens:** Are we building what users actually need? Would this save an engineer 30 minutes? Does the buyer (VP) care?
-- Write the full board review to `~/carlsbert/ceo/daily_reports/`.
-- Send a concise summary to Telegram.
+STOP all execution. This is a strategic meeting, not a status check. Produce REAL outputs:
+
+**CTO Review** — write to `~/carlsbert/tech_radar/radar.md`:
+- Scan what we currently use (embedding model, vector DB, LLM, frameworks, languages).
+- Search if anything better exists NOW (not someday — today).
+- Update ADOPT/TRIAL/ASSESS/HOLD with specific versions and reasons.
+- If something should change: write an RFC to `~/carlsbert/rfcs/`.
+
+**CFO Review** — write to `~/carlsbert/finance/`:
+- How much work got done since last review? List concrete outputs.
+- What was the cost (estimate tokens used, time spent)?
+- Token ROI: results per token. Which company delivered most value?
+- Any waste? Kill underperforming initiatives.
+- Reallocate budget if needed: update `~/carlsbert/config.yaml` budget section.
+
+**Marketing Review** — write to `~/carlsbert/marketing/`:
+- For each company with a product: who is the buyer? What's the GTM?
+- HyperRetrieval: what would make a VP of Engineering buy this? What's missing?
+- Write GTM feasibility briefs: market size, competition, effort to ship, revenue potential.
+- What should we open-source vs keep proprietary?
+
+**Multi-Persona Debate** — write to `~/carlsbert/research/brainstorms/`:
+- Pick one strategic question (e.g., "Should we rewrite the retrieval engine in Rust?")
+- Argue it from 3+ perspectives: engineer, business, product, scientist.
+- Reach a conclusion with reasoning. Not "it depends" — make a call.
+
+**Architecture Review** — append to `~/carlsbert/ceo/daily_reports/`:
+- Is our system design right across all companies?
+- Any technical debt accumulating? Any 2-year consequences of current decisions?
+- Cross-company synergies: can anything from one company help another?
+
+**Send board summary to Telegram** — 5-6 lines max:
+- Key decisions made
+- Tech radar changes
+- Threats spotted
+- Next priorities
 
 ---
 
